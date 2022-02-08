@@ -33,7 +33,7 @@ Below a non-exhaustive list of the check performed by OAUTHScan:
 
 
 # Installation
-After downloaded (or cloned) the OAUTHScan repository, build it using gradle, and finally import the generated 'OAUTHscan-1.0.jar' file via Burp Extender tab.
+After downloaded (or cloned) the OAUTHScan repository, build it using gradle, and finally import the generated 'OAUTHscan-1.0.jar' file via Burp Extender tab. Alternatively is possible to install it from official Burp App Store.
 
 
 # Usage

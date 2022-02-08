@@ -648,7 +648,8 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                                     "OAUTHv2/OpenID Flow Excessive Lifetime for Secret Tokens",
                                                     "Detected an excessive lifetime for the OAUTHv2/OpenID secret tokens released after a successful login.\n<br> "
                                                     +"More specifically the issued secret token <b>"+pName+"</b> expires in <b>"+expirTime+"</b> seconds.\n<br> "
-                                                    +"If possible, it is advisable to set an Access Token expiration time of an 1 hour, and set a Refresh Token expiration time of 2 hours\n<br>"
+                                                    +"If possible, it is advisable to set a short expiration time for Access Token (eg. 30 minutes), and "
+                                                    +"enable Refresh Token rotation with expiration time (eg. 2 hours).\n<br>"
                                                     +"<br>References:<br>"
                                                     +"<a href=\"https://www.rfc-editor.org/rfc/rfc6819#page-54\">https://www.rfc-editor.org/rfc/rfc6819#page-54</a>",
                                                     "Medium",
@@ -676,7 +677,8 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                                 +"This issue could be a false positive, then it is suggested to double-check it manually.\n<br> "
                                                 +"If the Authorization Server releases secret tokens which never expire, it exposes the OAUTHv2/OpenID platform "
                                                 +"to various security risks of in case of accidental leakage of a secret token.\n<br>"
-                                                +"If possible it is advisable to force expiration for Access Token after 1 hour, and for Refresh Token after 2 hours\n<br>"
+                                                +"If possible, it is advisable to set a short expiration time for Access Token (eg. 30 minutes), and "
+                                                +"enable Refresh Token rotation with expiration time (eg. 2 hours).\n<br>"
                                                 +"<br>References:<br>"
                                                 +"<a href=\"https://www.rfc-editor.org/rfc/rfc6819#page-54\">https://www.rfc-editor.org/rfc/rfc6819#page-54</a>",
                                                 "High",
@@ -1976,70 +1978,122 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                     }
                 }
             }
-
-
-            // Additional checks for Secret Token Leakage issues
-            int[] findingOffset = new int[2];
-            if (! GOTTOKENS.isEmpty()) {
-                String reqReferer = getHttpHeaderValueFromList(reqHeaders, "Referer");
-                for (Map.Entry<String,List<String>> entry : GOTTOKENS.entrySet()) {
-                    List<String> tokenList = entry.getValue();
-                    for (String tokenValue: tokenList) {
-                        if (reqReferer!=null) {
-                            if (reqReferer.contains(tokenValue)) {
-                                // Found Code Leakage issue on Referer header
-                                List<int[]> requestHighlights = new ArrayList<>(1);
-                                int findingStart = requestString.indexOf(reqReferer);
-                                findingOffset[0] = findingStart;
-                                findingOffset[1] = findingStart+reqReferer.length();
-                                requestHighlights.add(findingOffset);                            
-                                issues.add(
-                                    new CustomScanIssue(
-                                        baseRequestResponse.getHttpService(),
-                                        helpers.analyzeRequest(baseRequestResponse).getUrl(),
-                                        new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, requestHighlights, null) },
-                                        "OAUTHv2/OpenID Leakage of Secret Token on Referer Header",
-                                        "The request improperly exposes the following secret token (Access Token or Refresh Token) "
-                                        +"on its Referer header: <b>"+tokenValue+"</b>, then a threat agent could be able retrieve it and "
-                                        +"obtain access to private resources of victim users.",
-                                        "Medium",
-                                        "Firm"
-                                    )
-                                );
-                            }
-                        }
-                        if (!reqQueryString.isEmpty() & reqQueryString.contains(tokenValue)) {
-                            // Found Code Leakage issue in URL query
+        }
+        
+        // Additional passive checks on all request for Secret Token Leakage issues 
+        int[] findingOffset = new int[2];
+        if (! GOTTOKENS.isEmpty()) {
+            String reqReferer = getHttpHeaderValueFromList(reqHeaders, "Referer");
+            for (Map.Entry<String,List<String>> entry : GOTTOKENS.entrySet()) {
+                List<String> tokenList = entry.getValue();
+                for (String tokenValue: tokenList) {
+                    if (reqReferer!=null) {
+                        if (reqReferer.contains(tokenValue)) {
+                            // Found Secret Token Leakage issue on Referer header
                             List<int[]> requestHighlights = new ArrayList<>(1);
-                            int findingStart = requestString.indexOf(tokenValue);
+                            int findingStart = requestString.indexOf(reqReferer);
                             findingOffset[0] = findingStart;
-                            findingOffset[1] = findingStart+tokenValue.length();
-                            requestHighlights.add(findingOffset);
+                            findingOffset[1] = findingStart+reqReferer.length();
+                            requestHighlights.add(findingOffset);                            
                             issues.add(
                                 new CustomScanIssue(
                                     baseRequestResponse.getHttpService(),
                                     helpers.analyzeRequest(baseRequestResponse).getUrl(),
                                     new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, requestHighlights, null) },
-                                    "OAUTHv2/OpenID Leakage of Secret Token in URL Query",
+                                    "OAUTHv2/OpenID Leakage of Secret Token on Referer Header",
                                     "The request improperly exposes the following secret token (Access Token or Refresh Token) "
-                                    +"value on its URL query string: <b>"+tokenValue+"</b>, then a threat agent could be able retrieve it and "
+                                    +"on its Referer header: <b>"+tokenValue+"</b>, then a threat agent could be able retrieve it and "
                                     +"obtain access to private resources of victim users.",
                                     "Medium",
                                     "Firm"
                                 )
                             );
                         }
-                    }                
-                }
+                    }
+                    if (!reqQueryString.isEmpty() & reqQueryString.contains(tokenValue)) {
+                        // Found Secret Token Leakage issue in URL query
+                        List<int[]> requestHighlights = new ArrayList<>(1);
+                        int findingStart = requestString.indexOf(tokenValue);
+                        findingOffset[0] = findingStart;
+                        findingOffset[1] = findingStart+tokenValue.length();
+                        requestHighlights.add(findingOffset);
+                        issues.add(
+                            new CustomScanIssue(
+                                baseRequestResponse.getHttpService(),
+                                helpers.analyzeRequest(baseRequestResponse).getUrl(),
+                                new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, requestHighlights, null) },
+                                "OAUTHv2/OpenID Leakage of Secret Token in URL Query",
+                                "The request improperly exposes the following secret token (Access Token or Refresh Token) "
+                                +"value on its URL query string: <b>"+tokenValue+"</b>, then a threat agent could be able retrieve it and "
+                                +"obtain access to private resources of victim users.",
+                                "Medium",
+                                "Firm"
+                            )
+                        );
+                    }
+                }                
             }
-            // Additional checks for OpenID Id_Token Leakage issues
-            if (! GOTOPENIDTOKENS.isEmpty()) {
-                String reqReferer = getHttpHeaderValueFromList(reqHeaders, "Referer");
-                List<String> idtokenList = GOTOPENIDTOKENS;
-                for (String idtokenValue: idtokenList) {
-                    if (reqReferer!=null) { 
-                        if (reqReferer.contains(idtokenValue)) {
-                            // Found Token Leakage issue on Referer header
+        }
+        // Additional checks on all requests for OpenID Id_Token Leakage issues
+        if (! GOTOPENIDTOKENS.isEmpty()) {
+            String reqReferer = getHttpHeaderValueFromList(reqHeaders, "Referer");
+            List<String> idtokenList = GOTOPENIDTOKENS;
+            for (String idtokenValue: idtokenList) {
+                if (reqReferer!=null) { 
+                    if (reqReferer.contains(idtokenValue)) {
+                        // Found ID_Token Leakage issue on Referer header
+                        List<int[]> requestHighlights = new ArrayList<>(1);
+                        int findingStart = requestString.indexOf(reqReferer);
+                        findingOffset[0] = findingStart;
+                        findingOffset[1] = findingStart+reqReferer.length();
+                        requestHighlights.add(findingOffset);
+                        issues.add(
+                            new CustomScanIssue(
+                                baseRequestResponse.getHttpService(),
+                                helpers.analyzeRequest(baseRequestResponse).getUrl(),
+                                new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, requestHighlights, null) },
+                                "OpenID Leakage of ID_Token on Referer Header",
+                                "The request improperly exposes the following OpenID <code>id_token</code> "
+                                +"on its Referer header: <b>"+idtokenValue+"</b>, then a threat agent could be able retrieve it and "
+                                +"potentially retrieve reserved data contained in its claims (eg. users PII).",
+                                "Medium",
+                                "Firm"
+                            )
+                        );
+                    }
+                }
+                if (!reqQueryString.isEmpty() & reqQueryString.contains(idtokenValue)) {
+                    // Found ID_Token Leakage issue in URL query
+                    List<int[]> requestHighlights = new ArrayList<>(1);
+                    int findingStart = requestString.indexOf(idtokenValue);
+                    findingOffset[0] = findingStart;
+                    findingOffset[1] = findingStart+idtokenValue.length();
+                    requestHighlights.add(findingOffset);
+                    issues.add(
+                        new CustomScanIssue(
+                            baseRequestResponse.getHttpService(),
+                            helpers.analyzeRequest(baseRequestResponse).getUrl(),
+                            new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, requestHighlights, null) },
+                            "OpenID Leakage of ID_Token in URL Query",
+                            "The request improperly exposes the following OpenID <code>id_token</code> "
+                            +"value on its URL query string: <b>"+idtokenValue+"</b>, then a threat agent could be able retrieve it and "
+                            +"potentially retrieve reserved data contained in its claims (eg. users PII).",
+                            "Medium",
+                            "Firm"
+                        )
+                    );
+                }
+            }   
+        }
+        // Additional checks on all requests for Authorization Code Leakage issues
+        if (!GOTCODES.isEmpty()) {
+            String reqReferer = getHttpHeaderValueFromList(reqHeaders, "Referer");
+            for (Map.Entry<String,List<String>> entry : GOTCODES.entrySet()) {
+                List<String> codeList = entry.getValue();
+                for (String codeValue: codeList) {
+                    if (reqReferer!=null) {
+                        if (reqReferer.contains(codeValue)) {
+                            // Found Authorization Code Leakage issue on Referer header
                             List<int[]> requestHighlights = new ArrayList<>(1);
                             int findingStart = requestString.indexOf(reqReferer);
                             findingOffset[0] = findingStart;
@@ -2050,91 +2104,38 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                     baseRequestResponse.getHttpService(),
                                     helpers.analyzeRequest(baseRequestResponse).getUrl(),
                                     new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, requestHighlights, null) },
-                                    "OpenID Leakage of ID_Token on Referer Header",
-                                    "The request improperly exposes the following OpenID <code>id_token</code> "
-                                    +"on its Referer header: <b>"+idtokenValue+"</b>, then a threat agent could be able retrieve it and "
-                                    +"obtain access to private resources of victim users.",
-                                    "Medium",
-                                    "Firm"
-                                )
-                            );
-                        }
-                    }
-                    if (!reqQueryString.isEmpty() & reqQueryString.contains(idtokenValue)) {
-                        // Found Token Leakage issue in URL query
-                        List<int[]> requestHighlights = new ArrayList<>(1);
-                        int findingStart = requestString.indexOf(idtokenValue);
-                        findingOffset[0] = findingStart;
-                        findingOffset[1] = findingStart+idtokenValue.length();
-                        requestHighlights.add(findingOffset);
-                        issues.add(
-                            new CustomScanIssue(
-                                baseRequestResponse.getHttpService(),
-                                helpers.analyzeRequest(baseRequestResponse).getUrl(),
-                                new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, requestHighlights, null) },
-                                "OpenID Leakage of ID_Token in URL Query",
-                                "The request improperly exposes the following OpenID <code>id_token</code> "
-                                +"value on its URL query string: <b>"+idtokenValue+"</b>, then a threat agent could be able retrieve it and "
-                                +"obtain access to private resources of victim users.",
-                                "Medium",
-                                "Firm"
-                            )
-                        );
-                    }
-                }   
-            }
-            // Additional checks for Authorization Code Leakage issues
-            if (!GOTCODES.isEmpty()) {
-                String reqReferer = getHttpHeaderValueFromList(reqHeaders, "Referer");
-                for (Map.Entry<String,List<String>> entry : GOTCODES.entrySet()) {
-                    List<String> codeList = entry.getValue();
-                    for (String codeValue: codeList) {
-                        if (reqReferer!=null) {
-                            if (reqReferer.contains(codeValue)) {
-                                // Found Code Leakage issue on Referer header
-                                List<int[]> requestHighlights = new ArrayList<>(1);
-                                int findingStart = requestString.indexOf(reqReferer);
-                                findingOffset[0] = findingStart;
-                                findingOffset[1] = findingStart+reqReferer.length();
-                                requestHighlights.add(findingOffset);
-                                issues.add(
-                                    new CustomScanIssue(
-                                        baseRequestResponse.getHttpService(),
-                                        helpers.analyzeRequest(baseRequestResponse).getUrl(),
-                                        new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, requestHighlights, null) },
-                                        "OAUTHv2/OpenID Leakage of Authorization Code on Referer Header",
-                                        "The request improperly exposes the following OAUTHv2 authorization code "
-                                        +"on its Referer header: <b>"+codeValue+"</b>, then a threat agent could be able retrieve it and "
-                                        +"potentially gain access to private resources of victim users.",
-                                        "Medium",
-                                        "Firm"
-                                    )
-                                );
-                            }
-                        }
-                        if (!reqQueryString.isEmpty() & reqQueryString.contains(codeValue)) {
-                            // Found Code Leakage issue in URL query
-                            List<int[]> requestHighlights = new ArrayList<>(1);
-                            int findingStart = requestString.indexOf(codeValue);
-                            findingOffset[0] = findingStart;
-                            findingOffset[1] = findingStart+codeValue.length();
-                            requestHighlights.add(findingOffset);
-                            issues.add(
-                                new CustomScanIssue(
-                                    baseRequestResponse.getHttpService(),
-                                    helpers.analyzeRequest(baseRequestResponse).getUrl(),
-                                    new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, requestHighlights, null) },
-                                    "OAUTHv2/OpenID Leakage of Authorization Code in URL Query",
+                                    "OAUTHv2/OpenID Leakage of Authorization Code on Referer Header",
                                     "The request improperly exposes the following OAUTHv2 authorization code "
-                                    +"value on its URL query string: <b>"+codeValue+"</b>, then a threat agent could be able retrieve it and "
+                                    +"on its Referer header: <b>"+codeValue+"</b>, then a threat agent could be able retrieve it and "
                                     +"potentially gain access to private resources of victim users.",
                                     "Medium",
                                     "Firm"
                                 )
                             );
                         }
-                    }                
-                }
+                    }
+                    if (!reqQueryString.isEmpty() & reqQueryString.contains(codeValue)) {
+                        // Found Authorization Code Leakage issue in URL query
+                        List<int[]> requestHighlights = new ArrayList<>(1);
+                        int findingStart = requestString.indexOf(codeValue);
+                        findingOffset[0] = findingStart;
+                        findingOffset[1] = findingStart+codeValue.length();
+                        requestHighlights.add(findingOffset);
+                        issues.add(
+                            new CustomScanIssue(
+                                baseRequestResponse.getHttpService(),
+                                helpers.analyzeRequest(baseRequestResponse).getUrl(),
+                                new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, requestHighlights, null) },
+                                "OAUTHv2/OpenID Leakage of Authorization Code in URL Query",
+                                "The request improperly exposes the following OAUTHv2 authorization code "
+                                +"value on its URL query string: <b>"+codeValue+"</b>, then a threat agent could be able retrieve it and "
+                                +"potentially gain access to private resources of victim users.",
+                                "Medium",
+                                "Firm"
+                            )
+                        );
+                    }
+                }                
             }
         }    
     return issues;
@@ -3454,7 +3455,7 @@ class CustomScanIssue implements IScanIssue
         +"Keychain/Keystore for mobile apps, use browser in-memory for web apps, etc.). "
         +"It is discouraged to store tokens on browsers local storage, because they will be "
         +"accessible by Javascript (XSS)</li><li>If possible use short lived access tokens "
-        +"(i.e. expiration 30 minutes)</li>"
+        +"(i.e. expiration 30 minutes), and also enable refresh token rotation (eg. expiration 2 hours).</li>"
         +"<li>The OAUTHv2 Implicit Flow is insecure and considered deprecated by specifications, "
         +"avoid to use it and instead adopt OAUTHv2 Authorization Code Flow. "
         +"At the same times, developers should be careful when implementing OpenID Implicit Flow "
