@@ -70,6 +70,20 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
     final long NANOSEC_PER_SEC = 1000l*1000*1000;
     private static final int POLLING_INTERVAL = 3000;  // milliseconds
 
+    private static final List<String> IANA_PARAMS = Arrays.asList("client_id", "client_secret", "response_type", "redirect_uri", 
+    "scope", "state", "code", "error", "error_description", "error_uri", "grant_type", "access_token", "token_type", "expires_in", 
+    "username", "password", "refresh_token", "nonce", "display", "prompt", "max_age", "ui_locales", "claims_locales", "id_token_hint", 
+    "login_hint", "acr_values", "claims", "registration", "request", "request_uri", "id_token", "session_state", "assertion", 
+    "client_assertion", "client_assertion_type", "code_verifier", "code_challenge", "code_challenge_method", "claim_token", "pct", 
+    "rpt", "ticket", "upgraded", "vtr", "device_code", "resource", "audience", "requested_token_type", "subject_token", 
+    "subject_token_type", "actor_token", "actor_token_type", "issued_token_type", "response_mode", "nfv_token", "iss", "sub", 
+    "aud", "exp", "nbf", "iat", "jti", "ace_profile", "nonce1", "nonce2", "ace_client_recipientid", "ace_server_recipientid", 
+    "req_cnf", "rs_cnf", "cnf");
+
+
+    private static final List<String> ACR_VALUES = Arrays.asList("face", "ftp", "geo", "hwk", "iris", "kba", "mca", "mfa", "otp", 
+    "pin", "pwd", "rba", "retina", "sc", "sms", "swk", "tel", "user", "vbm", "wia");
+
     private static final List<String> INJ_REDIR = new ArrayList<>();
     static {
         INJ_REDIR.add("/../../../../../notexist");
@@ -689,6 +703,37 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            
+            // Detection of custom parameters (not in IANA list) on OAUTHv2/OpenID requests
+            List<IParameter> reqParams = reqInfo.getParameters();
+            if (reqParams!=null) {
+                for (IParameter param: reqParams) {
+                    if ((!IANA_PARAMS.contains(param.getName())) & (param.getType()!=IParameter.PARAM_COOKIE)) {
+                        stdout.println("[+] Passive Scan: Found a custom parameter (not in IANA list) on OAUTHv2/OpenID request");
+                        String customName = param.getName();
+                        String customValue = param.getValue();
+                        List<int[]> requestHighlights = getMatches(requestString.getBytes(), customName.getBytes());
+                        issues.add(
+                            new CustomScanIssue(
+                                baseRequestResponse.getHttpService(),
+                                helpers.analyzeRequest(baseRequestResponse).getUrl(),
+                                new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, requestHighlights, null) },
+                                "OAuthv2/OpenID Custom Request Parameter Detected",
+                                "The request contains a parameter which seems not included among those defined by OAuthv2/OpenID standards.\n<br>"
+                                +"In details, the OAuthv2/OpenID Flow request contains the parameter <code>"+customName+"</code> with value <b>"+customValue+"</b> "
+                                +"which does not fall within those defined by IANA standards.\n<br>"
+                                +"Although this is not considerable as a security issue, further investigations are suggested to ensure that the "
+                                +"use of custom request parameters has not introduced security flaws in the OAuthv2/OpenID implementation.\n<br>"
+                                +"<br>References:<br>"
+                                +"<a href=\"https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml\">https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml</a>",
+                                "Information",
+                                "Firm"
+                            )
+                        );
                     }
                 }
             }
@@ -3015,6 +3060,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
         Boolean isOpenID = false;
         IResponseVariations respVariations = null;
         Boolean respDiffers = false;
+        int[] payloadOffset = new int[2];
         IParameter challengemethodParameter = helpers.getRequestParameter(baseRequestResponse.getRequest(), "code_challenge_method");
         IParameter codechallengeParameter = helpers.getRequestParameter(baseRequestResponse.getRequest(), "code_challenge");
         IParameter scopeParameter = helpers.getRequestParameter(baseRequestResponse.getRequest(), "scope");
@@ -3038,9 +3084,9 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                     } else if ( helpers.urlDecode(resptypeParameter.getValue()).equals("code token") || resptypeParameter.getValue().contains("id_token")) {
                         isOpenID = true;
                     }
-                    if (!challengemethodParameter.getValue().toLowerCase().equals("plain")) {
+                    if (challengemethodParameter.getValue().toLowerCase().equals("plain")) {
                         // Check not necessary PKCE is already set to plaintext
-                        //stdout.println("[+] Exiting, check not needed PKCE already set to plaintext.");
+                        //stdout.println("[+] Active Scan: Exiting, check not needed PKCE already set to plaintext.");
                         return issues;
                     }
                     // Removing the 'code_challenge' parameter from the authorization request to check the downgrade issue
@@ -3068,19 +3114,22 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                             } 
                         }
                         if (!respDiffers) {
-                            List<int[]> activeScanMatches = getMatches(checkRequestResponse.getResponse(), codechallengeValue.getBytes());
-                            activeScanMatches.addAll(getMatches(checkRequestResponse.getResponse(), challengemethodValue.getBytes()));
+                            List<int[]> requestHighlights = new ArrayList<>(1);
+                            payloadOffset[0] = codechallengeParameter.getNameStart();
+                            payloadOffset[1] = codechallengeParameter.getValueEnd();
+                            requestHighlights.add(payloadOffset);
                             if (isOpenID) {
                                 // Successful downgraded OpenID PKCE to plaintext
                                 issues.add(new CustomScanIssue(
                                     baseRequestResponse.getHttpService(),
                                     helpers.analyzeRequest(baseRequestResponse).getUrl(), 
-                                    new IHttpRequestResponse[] {callbacks.applyMarkers(baseRequestResponse, activeScanMatches, null), callbacks.applyMarkers(checkRequestResponse, null, null) },
+                                    new IHttpRequestResponse[] {callbacks.applyMarkers(baseRequestResponse, requestHighlights, null), callbacks.applyMarkers(checkRequestResponse, null, null) },
                                     "OpenID Flow PKCE Downgraded to Plaintext",
-                                    "The OpenID Flow results vulnerable to PKCE downgrade attacks, from <code>challenge_method_value</code> "
-                                    +"<b>"+challengemethodValue+"</b> to <b>plain</b>.\n<br>"
-                                    +"In details, the OpenID Authorization Server accepted successfully both an authorization request having the PKCE parameter "
-                                    +"<code>code_challenge</code> set to the value <b>"+codechallengeValue+"</b> and also a request without it.\n<br>"
+                                    "The OpenID Flow results afflicted by PKCE downgrade vulnerability which allows to alter the original PKCE challenge method "
+                                    +"from a secure hash algorithm to plaintext, defeating the PKCE defences.\n<br>"
+                                    +"In details, the OpenID Authorization Server is configured to accept authorization requests having the <code>code_challenge_method</code> "
+                                    +"parameter set to <b>"+challengemethodValue+"</b> and the <code>code_challenge</code> parameter to <b>"+codechallengeValue+"</b>, "
+                                    +"but it also accepts downgraded authorization request withouth any <code>code_challenge</code> parameter (which is implicitly valued as plaintext).\n<br>"
                                     +"When OpenID Flows supports PKCE but does not make its use mandatory, the Authorization Server accepts authorization requests "
                                     +"without the PKCE <code>code_challenge</code> parameter and returns a valid authorization <code>code</code> in response, "
                                     +"because it assumes that the <b>plain</b> challenge method is in use "
@@ -3098,12 +3147,13 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                 issues.add(new CustomScanIssue(
                                     baseRequestResponse.getHttpService(),
                                     helpers.analyzeRequest(baseRequestResponse).getUrl(), 
-                                    new IHttpRequestResponse[] {callbacks.applyMarkers(baseRequestResponse, activeScanMatches, null), callbacks.applyMarkers(checkRequestResponse, null, null) },
+                                    new IHttpRequestResponse[] {callbacks.applyMarkers(baseRequestResponse, requestHighlights, null), callbacks.applyMarkers(checkRequestResponse, null, null) },
                                     "OAUTHv2 Flow PKCE Downgraded to Plaintext",
-                                    "The OAUTHv2 Flow results vulnerable to PKCE Downgrade attacks, from <code>challenge_method_value</code> "
-                                    +"<b>"+challengemethodValue+"</b> to <b>plain</b>.\n<br>"
-                                    +"In details, the OAUTHv2 Authorization Server accepted successfully both an authorization request having the PKCE parameter "
-                                    +"<code>code_challenge</code> set to the value <b>"+codechallengeValue+"</b> and also a request without it.\n<br>"
+                                    "The OAUTHv2 Flow results afflicted by PKCE downgrade vulnerability which allows to alter the original PKCE challenge method "
+                                    +"from a secure hash algorithm to plaintext, defeating the PKCE defences.\n<br>"
+                                    +"In details, the OAUTHv2 Authorization Server is configured to accept authorization requests having the <code>code_challenge_method</code> "
+                                    +"parameter set to <b>"+challengemethodValue+"</b> and the <code>code_challenge</code> parameter to <b>"+codechallengeValue+"</b>, "
+                                    +"but it also accepts downgraded authorization request withouth any <code>code_challenge</code> parameter which is implicitly valued as <b>plain</b>.\n<br>"
                                     +"When OAUTHv2 Flows supports PKCE but does not make its use mandatory, the Authorization Server accepts authorization requests "
                                     +"without the PKCE <code>code_challenge</code> parameter and returns a valid authorization <code>code</code> in response, "
                                     +"because it assumes that the <b>plain</b> challenge method is in use "
@@ -3274,6 +3324,118 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
 
 
 
+    public List<IScanIssue> acrScan(IHttpRequestResponse baseRequestResponse, IScannerInsertionPoint insertionPoint) {
+        // Scan for OpenID 'acr_values' request values having potential misconfigurations issues
+        List<IScanIssue> issues = new ArrayList<>();
+        IHttpRequestResponse checkRequestResponse;
+        int[] payloadOffset = new int[2];
+        String checkRequestStr;
+        Boolean isOpenID = false;
+        byte[] rawrequest = baseRequestResponse.getRequest();
+        String origRequestStr = helpers.bytesToString(rawrequest);
+        IParameter acrParameter = helpers.getRequestParameter(baseRequestResponse.getRequest(), "acr_values");
+        IParameter resptypeParameter = helpers.getRequestParameter(baseRequestResponse.getRequest(), "response_type");
+        IParameter scopeParameter = helpers.getRequestParameter(baseRequestResponse.getRequest(), "scope");
+        IParameter clientIdParameter = helpers.getRequestParameter(baseRequestResponse.getRequest(), "client_id");
+        if (clientIdParameter!=null & resptypeParameter!=null & acrParameter!=null) {
+            if (insertionPoint.getInsertionPointName().equals("acr_values")) {   // Forcing to perform only a tentative (unique insertion point)
+                // Determine if is OpenID Flow
+                if (scopeParameter!=null) {
+                    if (scopeParameter.getValue().contains("openid")) {
+                        isOpenID = true;
+                    }
+                } else if (helpers.urlDecode(resptypeParameter.getValue()).contains("id_token") || helpers.urlDecode(resptypeParameter.getValue()).equals("code token")) {
+                    isOpenID = true;
+                }
+                // Checking only on OpenID Flow requests because only them could be affected
+                if (isOpenID) {
+                    stdout.println("[+] Active Scan: Checking for ACR Values Misconfiguration issues");
+                    String acrOriginal = helpers.urlDecode(acrParameter.getValue());
+                    String[] acrOriginalItems = acrOriginal.split(" ");
+                    // Checks involve only Multi-Factor authentication requests
+                    if (acrOriginal != "pwd") {
+                        // First detects custom values on acr_values
+                        for (int i=0; i<acrOriginalItems.length; i++) {
+                            String acrOrigItem = acrOriginalItems[i];
+                            if (!ACR_VALUES.contains(acrOrigItem)) {
+                                List<int[]> requestHighlights = getMatches(origRequestStr.getBytes(), acrOrigItem.getBytes());
+                                issues.add(new CustomScanIssue(
+                                    baseRequestResponse.getHttpService(),
+                                    helpers.analyzeRequest(baseRequestResponse).getUrl(), 
+                                    new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, requestHighlights, null) }, 
+                                    "OpenID Flow with Custom ACR Value",
+                                    "The OpenID request seems using the parameter <code>acr_values</code> set to a custom value of <b>"+ acrOrigItem +"</b>.\n<br>"
+                                    +"OpenID standards specify a list of predefined values for the <code>acr_values</code> parameter, although this is not "
+                                    +"considerable as a security issue, further investigations are suggested to ensure that customized implementations"
+                                    +"of the OpenID Flow have not introduced security flaws\n<br>"
+                                    +"<br>References:\n<br>"
+                                    +"<a href=\"https://datatracker.ietf.org/doc/html/rfc8176#ref-OpenID.Core\">https://datatracker.ietf.org/doc/html/rfc8176#ref-OpenID.Core</a>",
+                                    "Information",
+                                    "Certain"
+                                ));
+                            }
+                        }
+                        //Then checks for potential Multi-Factor authentication issues
+                        String acrPayload = "";
+                        for (String acrValue: ACR_VALUES) {
+                            if (! Arrays.asList(acrOriginalItems).contains(acrValue)) {
+                                // Single value on acr_values parameter
+                                if (acrOriginalItems.length == 1) {
+                                    acrPayload = acrValue;
+                                // Multiple values on acr_values parameter
+                                } else if (acrOriginalItems.length > 1) {
+                                    if (Arrays.asList(acrOriginalItems).contains("pwd")) {
+                                        if (acrValue=="pwd") {
+                                            acrPayload = "pwd";
+                                        } else {
+                                            acrPayload = acrValue+"+pwd";
+                                        }
+                                    } else {
+                                        acrPayload = acrValue;
+                                    }
+                                }
+                            }                   
+                            IParameter newParam = helpers.buildParameter("acr_values", acrPayload, IParameter.PARAM_URL);
+                            byte [] checkRequest = helpers.updateParameter(rawrequest, newParam);
+                            checkRequestStr = helpers.bytesToString(checkRequest);
+                            checkRequestResponse = callbacks.makeHttpRequest(baseRequestResponse.getHttpService(), checkRequest);
+                            byte [] checkResponse = checkRequestResponse.getResponse();
+                            String checkResponseStr = helpers.bytesToString(checkResponse);
+                            IResponseInfo checkRespInfo = helpers.analyzeResponse(checkResponse);
+                            // Check if vulnerable and report the issue
+                            if ((checkRespInfo.getStatusCode() != 401) & (!checkResponseStr.toLowerCase().contains("error"))) {
+                                List<int[]> requestHighlights = new ArrayList<>(1);
+                                int payloadStart = checkRequestStr.indexOf(acrPayload);
+                                payloadOffset[0] = payloadStart;
+                                payloadOffset[1] = payloadStart+acrPayload.length();
+                                requestHighlights.add(payloadOffset);
+                                issues.add(new CustomScanIssue(
+                                    baseRequestResponse.getHttpService(),
+                                    helpers.analyzeRequest(baseRequestResponse).getUrl(), 
+                                    new IHttpRequestResponse[] {callbacks.applyMarkers(baseRequestResponse, null, null), callbacks.applyMarkers(checkRequestResponse, requestHighlights, null) },
+                                    "OpenID ACR Value Confusion",
+                                    "Found a potential misconfiguration on OpenID Flow in handling the request parameter <code>acr_values</code>.\n<br>"
+                                    +"In details, the Authorization Server usually validates the requests having the legit value \"<b>"+acrOriginal+"</b>\" for "
+                                    +"<code>acr_values</code> parameter, but it seems also not rejecting requests contaning the same parameter set with the value of "
+                                    +"<b>"+ acrPayload +"</b>.\n<br>"
+                                    +"This anomalous behavior should be further investigated, because it could be potentially abused by an attacker to bypass "
+                                    +"a Multi-Factor authentication mechanism eventually in place for the OpenID implementation.\n<br>"
+                                    +"<br>References:\n<br>"
+                                    +"<a href=\"https://datatracker.ietf.org/doc/html/rfc8176#ref-OpenID.Core\">https://datatracker.ietf.org/doc/html/rfc8176#ref-OpenID.Core</a>",
+                                    "Medium",
+                                    "Firm"
+                                ));
+                            }
+                        }
+                    }
+                }
+            }          
+        }
+        return issues;
+    }
+
+
+
 
     @Override
     public List<IScanIssue> doActiveScan(IHttpRequestResponse baseRequestResponse, IScannerInsertionPoint insertionPoint) {
@@ -3287,6 +3449,8 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
             List<IScanIssue> resptypeResults = resptypeScan(baseRequestResponse, insertionPoint);
             List<IScanIssue> wellknownResults = wellknownScan(baseRequestResponse, insertionPoint);
             List<IScanIssue> pkceResults = pkceScan(baseRequestResponse, insertionPoint);
+            List<IScanIssue> acrResults = acrScan(baseRequestResponse, insertionPoint);
+
             requriScan(baseRequestResponse, insertionPoint);
             issues.addAll(redirResults);
             issues.addAll(scopeResults);
@@ -3295,6 +3459,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
             issues.addAll(resptypeResults);
             issues.addAll(wellknownResults);
             issues.addAll(pkceResults);
+            issues.addAll(acrResults);
         } catch (Exception exc) {
             exc.printStackTrace(stderr);
         }
