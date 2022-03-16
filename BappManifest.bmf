@@ -2,8 +2,8 @@ Uuid: 8ef2db1173e8432c8797831c2e730727
 ExtensionType: 1
 Name: OAUTH Scan
 RepoName: oauth-scan
-ScreenVersion: 1.0
-SerialVersion: 3
+ScreenVersion: 1.1
+SerialVersion: 5
 MinPlatformVersion: 0
 ProOnly: True
 Author: Maurizio Siddu
