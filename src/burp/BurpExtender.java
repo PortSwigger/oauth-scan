@@ -191,6 +191,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
         WELL_KNOWN.add("/openam/.well-known/webfinger");
         WELL_KNOWN.add("/.well-known/host-meta");
         WELL_KNOWN.add("/.well-known/oidcdiscovery");
+        WELL_KNOWN.add("/organizations/v2.0/.well-known/openid-configuration");
         WELL_KNOWN.add("/.well-known/webfinger?resource=ORIGINCHANGEME/anonymous&rel=http://openid.net/specs/connect/1.0/issuer");
         WELL_KNOWN.add("/.well-known/webfinger?resource=acct:USERCHANGEME@URLCHANGEME&rel=http://openid.net/specs/connect/1.0/issuer");
     }
@@ -1917,7 +1918,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                     +"then there is not any PKCE protection against authorization code interception.\n<br>"
                                     +"The OAUTHv2 Authorization Code Flow with PKCE provides protection against authorization code interception attacks, "
                                     +"and is a security requirement on Mobile contexts.\n<br>"
-                                    +"In Mobile, Native desktop and SPA contexts is a security requirement to use OAUTHv2 Authorization Code Flow with PKCE extension.\n<br>"
+                                    +"In Mobile, Native desktop and SPA contexts the use of OAUTHv2 Authorization Code Flow with PKCE extension is a security requirement..\n<br>"
                                     +"<br>References:<br>"
                                     +"<a href=\"https://datatracker.ietf.org/doc/html/rfc7636\">https://datatracker.ietf.org/doc/html/rfc7636</a>",
                                     "Medium",
@@ -1938,7 +1939,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                         +"This means that the secret <code>code_verifier</code> value is sent plaintext on requests "
                                         +"then PKCE protections against authorization code interception attacks are de-facto disabled. In fact "
                                         +"they are based on the secrecy of the <code>code_verifier</code> parameter sent within requests.\n<br>"
-                                        +"In Mobile, Native desktop and SPA contexts is a security requirement to use OAUTHv2 Authorization Code Flow with PKCE extension.\n<br>"
+                                        +"In Mobile, Native desktop and SPA contexts the use of OAUTHv2 Authorization Code Flow with PKCE extension is a security requirement.\n<br>"
                                         +"<br>References:<br>"
                                         +"<a href=\"https://datatracker.ietf.org/doc/html/rfc7636\">https://datatracker.ietf.org/doc/html/rfc7636</a>",
                                         "Medium",
@@ -2329,7 +2330,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                         +"dangerous JavaScript handilng query parameters and URL fragments "
                                         +"(as insecure web messaging scripts, etc.).",
                                         "High",
-                                        "Certain"));
+                                        "Firm"));
                                 }
                             } else {
                                 issues.add(new CustomScanIssue(
@@ -2352,7 +2353,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                     +"<br>References:<br>"
                                     +"<a href=\"https://datatracker.ietf.org/doc/html/draft-ietf-oauth-security-topics-09#section-3.9\">https://datatracker.ietf.org/doc/html/draft-ietf-oauth-security-topics-09#section-3.9</a>",
                                     "High",
-                                    "Certain"));
+                                    "Firm"));
                             }
                         } else {
                             if (scopeParameter!=null) {
@@ -2377,7 +2378,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                         +"<br>References:<br>"
                                         +"<a href=\"https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest\">https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest</a>",
                                         "High",
-                                        "Certain"));
+                                        "Firm"));
                                 }
                             } else {
                                 issues.add(new CustomScanIssue(
@@ -2400,7 +2401,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                     +"<br>References:<br>"
                                     +"<a href=\"https://datatracker.ietf.org/doc/html/rfc6749#section-4.4.3\">https://datatracker.ietf.org/doc/html/rfc6749#section-4.4.3</a>",
                                     "High",
-                                    "Certain"));
+                                    "Firm"));
                             }
                         }
                     }
@@ -2677,7 +2678,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                 +"<a href=\"https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.2\">https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.2</a><br>"
                                 +"<a href=\"https://openid.net/specs/openid-connect-core-1_0.html#TokenRequestValidation\">https://openid.net/specs/openid-connect-core-1_0.html#TokenRequestValidation</a>",
                                 "High",
-                                "Certain"));
+                                "Firm"));
                         }
                     }
                 }
@@ -2718,7 +2719,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                 String originalResponseStr = helpers.bytesToString(originalResponse);
                 IResponseInfo originalRespInfo = helpers.analyzeResponse(originalResponse);
                 if (insertionPoint.getInsertionPointName().equals("nonce")) {   // Forcing to perform only a tentative (unique insertion point)
-                    stdout.println("[+] Active Scan: Checking for Duplicate Nonce values on OpenID requests");
+                    stdout.println("[+] Active Scan: Checking for Nonce values Reuse Allowed on OpenID requests");
                     // Build the request to replay the nonce value
                     byte[] checkRequest = baseRequestResponse.getRequest();
                     IHttpRequestResponse checkRequestResponse = callbacks.makeHttpRequest(baseRequestResponse.getHttpService(), checkRequest);
@@ -2754,10 +2755,10 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                     baseRequestResponse.getHttpService(),
                                     helpers.analyzeRequest(baseRequestResponse).getUrl(),
                                     new IHttpRequestResponse[] {callbacks.applyMarkers(baseRequestResponse, requestHighlights, null), callbacks.applyMarkers(checkRequestResponse, requestHighlights, null) },
-                                    "OpenID Flow Duplicate Nonce Parameter Detected",
-                                    "The OpenID Authorization Server seems issuing duplicate values for the <code>nonce</code> parameter "
+                                    "OpenID Flow Nonce Reuse Allowed",
+                                    "The OpenID Authorization Server seems allowing the reuse of values for the <code>nonce</code> parameter "
                                     +"during login procedure.\n<br>"
-                                    +"In details, the Authorization Server accepted a request with an already used <code>nonce</code> value\n <b>"+ nonceValue +"</b> "
+                                    +"In details, the Authorization Server accepted a request containing an already used <code>nonce</code> value\n <b>"+ nonceValue +"</b> "
                                     +"and released a new secret token (or authorization code) on response.\n<br>"
                                     +"Based on OpenID specifications the <code>nonce</code> parameter is used to associate a Client session "
                                     +"with an ID Token, and to mitigate replay attacks.\n<br>"
@@ -2776,7 +2777,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                     // Build the request to remove the nonce value
                     byte[] checkRequest_2 = baseRequestResponse.getRequest();
                     // Removing the nonce from request
-                    helpers.removeParameter(checkRequest_2, nonceParameter);
+                    checkRequest_2 = helpers.removeParameter(checkRequest_2, nonceParameter);
                     respDiffers = false;
                     IHttpRequestResponse checkRequestResponse_2 = callbacks.makeHttpRequest(baseRequestResponse.getHttpService(), checkRequest_2);
                     byte [] checkResponse_2 = checkRequestResponse_2.getResponse();
@@ -2810,7 +2811,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                 new CustomScanIssue(
                                     baseRequestResponse.getHttpService(),
                                     helpers.analyzeRequest(baseRequestResponse).getUrl(),
-                                    new IHttpRequestResponse[] {callbacks.applyMarkers(baseRequestResponse, requestHighlights, null), callbacks.applyMarkers(checkRequestResponse, null, null) },
+                                    new IHttpRequestResponse[] {callbacks.applyMarkers(baseRequestResponse, requestHighlights, null), callbacks.applyMarkers(checkRequestResponse_2, null, null) },
                                     "OpenID Flow Nonce Parameter not Evaluated",
                                     "The OpenID Flow is improperly implemented because the Authorization Server does not validates "
                                     +"the <code>nonce</code> parameter on login requests.\n<br>"
@@ -2886,9 +2887,9 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                     // Check if vulnerable and report the issue
                     if ((activeScanMatches.size() > 0) & (!checkResponseStr.toLowerCase().contains("error"))) {
                         List<int[]> requestHighlights = new ArrayList<>(1);
-                        int payloadStart = checkRequestStr.indexOf(payload_resptypenone);
+                        int payloadStart = checkRequestStr.indexOf("response_type=none");
                         payloadOffset[0] = payloadStart;
-                        payloadOffset[1] = payloadStart+payload_resptypenone.length();
+                        payloadOffset[1] = payloadStart+("response_type=none").length();
                         requestHighlights.add(payloadOffset);
                         issues.add(new CustomScanIssue(
                             baseRequestResponse.getHttpService(),
@@ -2903,7 +2904,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                             +"<br>References:\n<br>"
                             +"<a href=\"https://openid.net/specs/oauth-v2-multiple-response-types-1_0.html#none\">https://openid.net/specs/oauth-v2-multiple-response-types-1_0.html#none</a>",
                             "Low",
-                            "Certain"));
+                            "Firm"));
                     }
                 }
             }          
@@ -3097,7 +3098,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                     byte [] checkResponse = checkRequestResponse.getResponse();
                     IResponseInfo checkRespInfo = helpers.analyzeResponse(checkResponse);
                     String checkResponseStr = helpers.bytesToString(checkResponse);
-                    // Checking if the downgraded PKCE response was successful
+                    // Checking if the downgraded PKCE response was successful obtaining an authorization code withouth errors
                     if (checkRespInfo.getStatusCode() == originalRespInfo.getStatusCode()) {
                         respVariations = helpers.analyzeResponseVariations(baseRequestResponse.getResponse(), checkRequestResponse.getResponse());
                         List <String> responseChanges = respVariations.getVariantAttributes();
@@ -3105,10 +3106,10 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                             if (change.equals("status_code") || change.equals("page_title")) {
                                 respDiffers = true;
                             } else if (change.equals("whole_body_content") || change.equals("limited_body_content")) {
-                                // If response body differs but neither contains a error message and also both contains a token or a authorization code then respDiffers remain False
+                                // If response body differs but neither contains a error message and also contains an authorization code then respDiffers remain False
                                 if ( (checkResponseStr.toLowerCase().contains("error") & (!originalResponseStr.toLowerCase().contains("error"))) & 
-                                (((!checkResponseStr.toLowerCase().contains("code")) & (originalResponseStr.toLowerCase().contains("code"))) || 
-                                ((!checkResponseStr.toLowerCase().contains("token")) & (originalResponseStr.toLowerCase().contains("token")))) ) {
+                                (((!checkResponseStr.toLowerCase().contains("code")) & (originalResponseStr.toLowerCase().contains("code")))) ){//|| 
+                                //((!checkResponseStr.toLowerCase().contains("token")) & (originalResponseStr.toLowerCase().contains("token")))) ) {
                                     respDiffers = true;
                                 }
                             } 
@@ -3125,7 +3126,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                     helpers.analyzeRequest(baseRequestResponse).getUrl(), 
                                     new IHttpRequestResponse[] {callbacks.applyMarkers(baseRequestResponse, requestHighlights, null), callbacks.applyMarkers(checkRequestResponse, null, null) },
                                     "OpenID Flow PKCE Downgraded to Plaintext",
-                                    "The OpenID Flow results afflicted by PKCE downgrade vulnerability which allows to alter the original PKCE challenge method "
+                                    "The OpenID Flow seems afflicted by PKCE downgrade vulnerability which allows to alter the original PKCE challenge method "
                                     +"from a secure hash algorithm to plaintext, defeating the PKCE defences.\n<br>"
                                     +"In details, the OpenID Authorization Server is configured to accept authorization requests having the <code>code_challenge_method</code> "
                                     +"parameter set to <b>"+challengemethodValue+"</b> and the <code>code_challenge</code> parameter to <b>"+codechallengeValue+"</b>, "
@@ -3140,7 +3141,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                     +"<br>References:<br>"
                                     +"<a href=\"https://openid.net/specs/openid-igov-oauth2-1_0-02.html#rfc.section.3.1.7\">https://openid.net/specs/openid-igov-oauth2-1_0-02.html#rfc.section.3.1.7</a>",
                                     "Medium",
-                                    "Certain"
+                                    "Firm"
                                 ));
                             } else {
                                 // Successful downgraded OAUTHv2 PKCE to plaintext
@@ -3149,7 +3150,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                     helpers.analyzeRequest(baseRequestResponse).getUrl(), 
                                     new IHttpRequestResponse[] {callbacks.applyMarkers(baseRequestResponse, requestHighlights, null), callbacks.applyMarkers(checkRequestResponse, null, null) },
                                     "OAUTHv2 Flow PKCE Downgraded to Plaintext",
-                                    "The OAUTHv2 Flow results afflicted by PKCE downgrade vulnerability which allows to alter the original PKCE challenge method "
+                                    "The OAUTHv2 Flow seems afflicted by PKCE downgrade vulnerability which allows to alter the original PKCE challenge method "
                                     +"from a secure hash algorithm to plaintext, defeating the PKCE defences.\n<br>"
                                     +"In details, the OAUTHv2 Authorization Server is configured to accept authorization requests having the <code>code_challenge_method</code> "
                                     +"parameter set to <b>"+challengemethodValue+"</b> and the <code>code_challenge</code> parameter to <b>"+codechallengeValue+"</b>, "
@@ -3159,11 +3160,11 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                     +"because it assumes that the <b>plain</b> challenge method is in use "
                                     +"(this means <code>code_challenge</code> = <code>code_verifier</code>).\n<br> "
                                     +"A threat agent could exploit this issue in order to defeat the PKCE protections against authorization code interception attacks.\n<br>"
-                                    +"In Mobile, Native desktop and SPA contexts is a security requirement to use OAUTHv2 Authorization Code Flow with PKCE extension.\n<br>"
+                                    +"In Mobile, Native desktop and SPA contexts the use of OAUTHv2 Authorization Code Flow with PKCE extension is a security requirement.\n<br>"
                                     +"<br>References:<br>"
                                     +"<a href=\"https://datatracker.ietf.org/doc/html/rfc7636\">https://datatracker.ietf.org/doc/html/rfc7636</a>",
                                     "Medium",
-                                    "Certain"
+                                    "Firm"
                                 ));
                             }
                         }
@@ -3451,7 +3452,9 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
             List<IScanIssue> pkceResults = pkceScan(baseRequestResponse, insertionPoint);
             List<IScanIssue> acrResults = acrScan(baseRequestResponse, insertionPoint);
 
+            // The request_uri scan does not return a list of issue values
             requriScan(baseRequestResponse, insertionPoint);
+            
             issues.addAll(redirResults);
             issues.addAll(scopeResults);
             issues.addAll(codereplayResults);
