@@ -47,6 +47,10 @@ import java.time.Instant;
 import java.util.TimeZone;
 import java.util.Base64;
 import java.util.Date;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+
 
 
 
@@ -59,7 +63,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
 	private static PrintWriter stderr;
 
     public final String PLUGIN_NAME    = "OAUTHScan";
-	public final String PLUGIN_VERSION = "1.0";
+	public final String PLUGIN_VERSION = "1.1";
 	public final String AUTHOR  = "Maurizio Siddu";
 
 
@@ -411,6 +415,16 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
 	}
 
 
+    // Helper method to check keys on JSON object
+    public Boolean hasJSONKey(JSONObject jsonObj, String param) {
+        if (jsonObj.has(param)) {
+            return true;
+        }
+        return false;
+    }
+
+
+
 
     // Method to search specified patterns on HTTP request and responses
     public List<String> getMatchingParams(String paramName, String toSearch, String data, String mimeType) {
@@ -468,7 +482,8 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
 
 
 
-
+    
+    
     // Passive Scan section ///////////////////////////////
 
     @Override
@@ -503,6 +518,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
         // Getting the Response Headers and Body 
         List<String> respHeaders = respInfo.getHeaders();
         String respBody = "";
+
         
         // Check the presence of body in HTTP response based on RFC 7230 https://tools.ietf.org/html/rfc7230#section-3.3
         if ( (getHttpHeaderValueFromList(respHeaders, "Transfer-Encoding")!=null || getHttpHeaderValueFromList(respHeaders, "Content-Length")!=null) && (!reqInfo.getMethod().toLowerCase().contains("head")) ) {
@@ -522,6 +538,62 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
         IParameter requesturiParameter = helpers.getRequestParameter(baseRequestResponse.getRequest(), "request_uri");
         IParameter nonceParameter = helpers.getRequestParameter(baseRequestResponse.getRequest(), "nonce");
         IParameter respmodeParameter = helpers.getRequestParameter(baseRequestResponse.getRequest(), "response_mode");
+
+
+        // Searching for ".well-known" resources of OAUTHv2/OpenID flows
+        URL requrl = reqInfo.getUrl();
+        String reqpath = requrl.getPath();
+        if (reqpath!=null && helpers.urlDecode(reqpath).contains("/.well-known/") && respInfo.getStatusCode()==200) {
+            // Found well-known url in OAUTHv2/OpenID Flow 
+            issues.add(new CustomScanIssue(
+                baseRequestResponse.getHttpService(),
+                helpers.analyzeRequest(baseRequestResponse).getUrl(), 
+                new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, null, null) }, 
+                "OAUTHv2/OpenID Configuration Files in Well-Known URLs",
+                "Found OAUTHv2/OpenID configuration file publicly exposed on some well known urls.\n<br>"
+                +"In details, the configuration file was found at URL:\n <b>"+ requrl +"</b>.\n<br>"
+                +"The retrieved JSON configuration file contains some key information, such as details of "
+                +"additional features that may be supported.\n These files will sometimes give hints "
+                +"about a wider attack surface and supported features that may not be mentioned in the documentation.\n<br>"
+                +"<br>References:\n<ul>"
+                +"<li><a href=\"https://tools.ietf.org/id/draft-ietf-oauth-discovery-08.html#:~:text=well%2Dknown%2Foauth%2Dauthorization,will%20use%20for%20this%20purpose.\">https://tools.ietf.org/id/draft-ietf-oauth-discovery-08.html#:~:text=well%2Dknown%2Foauth%2Dauthorization,will%20use%20for%20this%20purpose.</a></li>"
+                +"<li><a href=\"https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfigurationRequest\">https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfigurationRequest</a></li></ul>",
+                "Information",
+                "Firm")); 
+
+
+            // Search useful info from the well-known JSON response
+            String wk_respBody = responseString.substring(respInfo.getBodyOffset()).trim();
+            List<String> wk_respHeaders = respInfo.getHeaders();
+            String wk_contenttype = getHttpHeaderValueFromList(wk_respHeaders, "Content-Type").trim();
+            if (! wk_respBody.isEmpty() && wk_contenttype.equals("application/json")) {
+                JSONObject jsonWK = new JSONObject(wk_respBody);
+
+                // Collect the supported scopes from the well-known JSON response
+                if (hasJSONKey(jsonWK, "scopes_supported")) {
+                    JSONArray jsonArr = jsonWK.getJSONArray("scopes_supported");
+                    for (int i=0; i<jsonArr.length(); i++) {
+                        String jsonItem = jsonArr.getString(i);
+                        if (! INJ_SCOPE.contains(jsonItem)) {
+                            INJ_SCOPE.add(jsonItem);
+                        }
+                    }
+                }
+
+                // Collect the supported acr from the well-known JSON response
+                if (hasJSONKey(jsonWK, "acr_values_supported")) {
+                    JSONArray jsonArr = jsonWK.getJSONArray("acr_values_supported");
+                    for (int i=0; i<jsonArr.length(); i++) {
+                        String jsonItem = jsonArr.getString(i);
+                        if (! ACR_VALUES.contains(jsonItem)) {
+                            ACR_VALUES.add(jsonItem);
+                        }
+                    }
+                }
+            }
+        }
+
+
 
 
         // Considering only OAUTHv2/OpenID Flow authorization and token requests
@@ -951,8 +1023,8 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                         new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, null, null) },
                                         "OpenID Implicit Flow Insecure Implementation Detected",
                                         "This OpenID Implicit Flow implementation is inerently insecure, because allows the transmission of "
-                                        +"secret tokens on the URL of HTTP GET requests.\n<br>This behaviour is deprecated by OpenID specifications "
-                                        +"because exposes the secret tokens to leakages (i.e. via cache, traffic sniffing, etc.) and replay attacks.\n<br>"
+                                        +"secret tokens on the URL of HTTP GET requests (usually on URL fragment).\n<br>This behaviour is deprecated by OpenID specifications "
+                                        +"because exposes the secret tokens to leakages (i.e. via cache, traffic sniffing, accesses from Javascript, etc.) and replay attacks.\n<br>"
                                         +"If the use of OpenID Implicit Flow is needed then is suggested to use the <code>request_mode</code> set to "
                                         +"<b>form_post</b> which force to send access tokens in the body of HTTP POST requests, or to"
                                         +"adopt the OpenID Implicit Flow which uses only the ID_Token (not exposing access tokens) "
@@ -1634,8 +1706,8 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                 "OAUTHv2 Implicit Flow Insecure Implementation Detected",
                                 "This is a login request of OAUTHv2 Implicit Flow, the <code>response_type</code> value is <b>"+helpers.urlDecode(respType)+"</b>.<br>"
                                 +"The OAUTHv2 Implicit Flow is considered inerently insecure because allows the transmission of "
-                                +"secret tokens in the URL of HTTP GET requests.\n<br>This behaviour is deprecated by OAUTHv2 specifications "
-                                +"since it exposes the secret tokens to leakages (i.e. via cache, traffic sniffing, etc.) and replay attacks.\n<br>"
+                                +"secret tokens in the URL of HTTP GET requests (usually on URL fragment).\n<br>This behaviour is deprecated by OAUTHv2 specifications "
+                                +"since it exposes the secret tokens to leakages (i.e. via cache, traffic sniffing, accesses from Javascript, etc.) and replay attacks.\n<br>"
                                 +"It is suggested to adopt OAUTHv2 Authorization Code Flow, or "
                                 +"any of the specific OpenID Implicyt Flow implementations (as <b>id_token</b> or <b>form_post</b>).\n<br>"
                                 +"Note: the use of Implicit Flow is also considered insecure in Mobile application contexts.\n<br>"
@@ -2151,7 +2223,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                     helpers.analyzeRequest(baseRequestResponse).getUrl(),
                                     new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, requestHighlights, null) },
                                     "OAUTHv2/OpenID Leakage of Authorization Code on Referer Header",
-                                    "The request improperly exposes the following OAUTHv2 authorization code "
+                                    "The request improperly exposes the following OAUTHv2/OpenID authorization code "
                                     +"on its Referer header: <b>"+codeValue+"</b>, then a threat agent could be able retrieve it and "
                                     +"potentially gain access to private resources of victim users.",
                                     "Medium",
@@ -2173,7 +2245,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                 helpers.analyzeRequest(baseRequestResponse).getUrl(),
                                 new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, requestHighlights, null) },
                                 "OAUTHv2/OpenID Leakage of Authorization Code in URL Query",
-                                "The request improperly exposes the following OAUTHv2 authorization code "
+                                "The request improperly exposes the following OAUTHv2/OpenID authorization code "
                                 +"value on its URL query string: <b>"+codeValue+"</b>, then a threat agent could be able retrieve it and "
                                 +"potentially gain access to private resources of victim users.",
                                 "Medium",

@@ -1,7 +1,7 @@
 // Apply the java plugin to add support for Java
 apply plugin: 'java'
 
-version '1.0'
+version '1.1'
 
 // In this section you declare where to find the dependencies of your project
 repositories {
@@ -10,9 +10,10 @@ repositories {
 
 // In this section you declare the dependencies for your production and test code
 dependencies {
-    // Add the Burp Extender interface
+   // Add the Burp Extender interface
     implementation group: 'net.portswigger.burp.extender', name: 'burp-extender-api', version: '2.1'
-
+    // https://mvnrepository.com/artifact/org.json/json
+    implementation group: 'org.json', name: 'json', version: '20220320'    
 }
 
 sourceSets {
@@ -33,7 +34,11 @@ gradle.projectsEvaluated {
 
 task fatJar(type: Jar) {
 	archiveBaseName = project.name + '-all'
-	from { configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) } }
+	from { 
+        configurations.runtimeClasspath.collect { 
+            it.isDirectory() ? it : zipTree(it) 
+        } 
+    }
 	with jar
 }
 

@@ -17,7 +17,7 @@ The plugin looks for various OAUTHv2/OpenID vulnerabilities and common misconfig
   * https://portswigger.net/web-security/oauth/openid
 
 
-Below a non-exhaustive list of the checks performed by OAUTHScan:
+Below a non-exhaustive list of checks performed by OAUTHScan:
 
   * Open Redirect issues on Redirect_Uri parameter
   * Authorization Code Replay issues
@@ -33,7 +33,9 @@ Below a non-exhaustive list of the checks performed by OAUTHScan:
 
 
 # Installation
-After downloaded (or cloned) the OAUTHScan repository, build it using gradle, and finally import the generated 'OAUTHscan-1.0.jar' file via Burp Extender tab. Alternatively is possible to install it from official Burp App Store.
+First download (or clone) the OAUTHScan repository from this repo.
+Then build it using gradle command: `gradlew build fatJar`. 
+Finally use the Burp GUI Extender tab to import the generated 'OAUTHscan-all-X.Y.jar' file (located on "build/libs/" project folder).
 
 
 # Usage
