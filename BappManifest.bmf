@@ -2,12 +2,12 @@ Uuid: 8ef2db1173e8432c8797831c2e730727
 ExtensionType: 1
 Name: OAUTH Scan
 RepoName: oauth-scan
-ScreenVersion: 1.0
-SerialVersion: 6
+ScreenVersion: 1.1
+SerialVersion: 8
 MinPlatformVersion: 0
 ProOnly: True
 Author: Maurizio Siddu
 ShortDescription: Provides some automatic security checks, which could be useful when testing applications implementing OAUTHv2 and OpenID standards.
-EntryPoint: build/libs/OAUTHscan-all-1.0.jar
+EntryPoint: build/libs/OAUTHscan-all-1.1.jar
 BuildCommand: ./gradlew fatJar
 SupportedProducts: Pro, Enterprise
