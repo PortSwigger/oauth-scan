@@ -431,11 +431,12 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
         List<String> matches = new ArrayList<String>();
         Pattern pattern = null;
         String data_lower;
+        int minLength = 4;
         if (data!=null) {
             // Case insensitive search
             paramName = paramName.toLowerCase();
             toSearch = toSearch.toLowerCase();
-            data_lower = data.toLowerCase();
+            data_lower = data.toLowerCase();          
             if (data_lower.contains(toSearch)) {
                 if (mimeType == null) {
                     // Parameter in response without a Content-Type
@@ -452,6 +453,8 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                 } else if (mimeType == "link") {
                     // Parameter in url of HTML link tag like "<a href=" or "<meta http-equiv=refresh content='3;url="
                     pattern = Pattern.compile("[&\\?]?" + paramName + "=([A-Za-z0-9\\-_\\.~\\+/]+)[&]?");
+                    pattern = Pattern.compile("<[\\w]+ [&\\?]?" + paramName + "=([A-Za-z0-9\\-_\\.~\\+/]+)[&]?");
+
                 } else {
                     // Parameter in text/html body
                     if (data.contains("location.href") || data.contains("location.replace") || data.contains("location.assign")) {
@@ -470,7 +473,10 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                 while(matcher.find()) {
                     int start = matcher.start(1);
                     int end = matcher.end(1);
-                    matches.add(data.substring(start, end));
+                    // Discard codes too short (probable false matching codes)
+                    if (end-start >= minLength) {
+                        matches.add(data.substring(start, end));
+                    }
                 }
             } 
         }
@@ -675,17 +681,17 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                 for (String fToken : foundTokens) {
                                     if (fToken.length()<6) {
                                         // Found a weak secret token
-                                        List<int[]> requestHighlights = new ArrayList<>(1);
+                                        List<int[]> responseHighlights = new ArrayList<>(1);
                                         int[] tokenOffset = new int[2];
-                                        int tokenStart = requestString.indexOf(fToken);
+                                        int tokenStart = responseString.indexOf(fToken);
                                         tokenOffset[0] = tokenStart;
                                         tokenOffset[1] = tokenStart+fToken.length();
-                                        requestHighlights.add(tokenOffset);
+                                        responseHighlights.add(tokenOffset);
                                         issues.add(
                                             new CustomScanIssue(
                                                 baseRequestResponse.getHttpService(),
                                                 helpers.analyzeRequest(baseRequestResponse).getUrl(),
-                                                new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, requestHighlights, null) },
+                                                new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, null, responseHighlights) },
                                                 "OpenID Weak Secret Token Value Detected",
                                                 "The OpenID Flow presents a security misconfiguration, the Authorization Server releases weak secret token values "
                                                 +"(insufficient entropy) during OpenID login procedure.\n<br>"
@@ -827,17 +833,17 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                             for (String fToken : foundIdTokens) {
                                 if (fToken.length()<6) {
                                     // Found a weak id_token
-                                    List<int[]> requestHighlights = new ArrayList<>(1);
+                                    List<int[]> responseHighlights = new ArrayList<>(1);
                                     int[] tokenOffset = new int[2];
-                                    int tokenStart = requestString.indexOf(fToken);
+                                    int tokenStart = responseString.indexOf(fToken);
                                     tokenOffset[0] = tokenStart;
                                     tokenOffset[1] = tokenStart+fToken.length();
-                                    requestHighlights.add(tokenOffset);
+                                    responseHighlights.add(tokenOffset);
                                     issues.add(
                                         new CustomScanIssue(
                                             baseRequestResponse.getHttpService(),
                                             helpers.analyzeRequest(baseRequestResponse).getUrl(),
-                                            new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, requestHighlights, null) },
+                                            new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, null, responseHighlights) },
                                             "OpenID Improper ID_Token Value Detected",
                                             "The OpenID Flow presents a security misconfiguration, the Authorization Server releases improper <code>id_token</code> values "
                                             +"(not a JWT) during login procedure.\n<br>"
@@ -961,7 +967,54 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                     );
                 }
 
-                // Checks for all OpenID Flows login requests
+                // Checking for OpenID Token Exchange or JWT Bearer Flows
+                if (reqParam!=null & grantParameter!=null) {
+                    // First retrieves the grant_type parameter from request body
+                    String grantType = "";
+                    for (IParameter param: reqParam) {
+                        if (param.getType() == IParameter.PARAM_BODY) {
+                            if (param.getName().equals("grant_type")) {
+                                grantType = param.getValue();
+                            }
+                        }
+                    }
+
+                    // Checking for OpenID Token Exchange Flow
+                    if (helpers.urlDecode(grantType).equals("urn:ietf:params:oauth:grant-type:token-exchange")) {
+                        // Found OpenID Token Exchange Flow
+                        issues.add(
+                            new CustomScanIssue(
+                                baseRequestResponse.getHttpService(),
+                                helpers.analyzeRequest(baseRequestResponse).getUrl(),
+                                new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, null, null) },
+                                "OpenID Token Exchange Flow Detected",
+                                "This is a OpenID Token Exchange Flow (RFC 8693) login request, the <code>grant_type</code> value is <b>"+helpers.urlDecode(grantType)+"</b>.\n<br>"
+                                +"Note: the Token Exchange specification does not require client authentication and even client identification at the token endpoint, "
+                                +"in that cases it should be implemented only on closed network within a service.",
+                                "Information",
+                                "Certain"
+                            )
+                        );
+                    // Checking for OpenID JWT Bearer Flow
+                    } else if (helpers.urlDecode(grantType).equals("urn:ietf:params:oauth:grant-type:jwt-bearer")) {
+                        // Found OpenID JWT Bearer Flow
+                        issues.add(
+                            new CustomScanIssue(
+                                baseRequestResponse.getHttpService(),
+                                helpers.analyzeRequest(baseRequestResponse).getUrl(),
+                                new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, null, null) },
+                                "OpenID JWT Bearer Flow Detected",
+                                "This is a OpenID JWT Bearer Flow (RFC 7523) login request, the <code>grant_type</code> value is <b>"+helpers.urlDecode(grantType)+"</b>.\n<br>",
+                                "Information",
+                                "Certain"
+                            )
+                        ); 
+                    }
+                }
+                
+
+
+                // Checks for OpenID Flows login requests
                 if ( ((reqQueryParam!=null & reqQueryParam.containsKey("client_id") & reqQueryParam.containsKey("response_type")) || 
                 ( reqParam!=null & (clientidParameter != null) & (resptypeParameter!=null))) ) {
                     stdout.println("[+] Passive Scan: OpenID Flow detected");
@@ -1001,7 +1054,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                     +"in order to provide a security mitigation against replay attacks.\n<br>"
                                     +"If there are not in place other anti-replay protections, then an attacker able to retrieve "
                                     +"a valid authorization request could replay it and potentially obtain access to other user resources.\n<br>"
-                                    +"Note: the Implicit Flow should be avoided in Mobile application contexts because is inerently insecure.\n<br>"
+                                    +"Note: the Implicit Flow should be avoided in Mobile application contexts because is inherently insecure.\n<br>"
                                     +"<br>References:<br>"
                                     +"<a href=\"https://openid.net/specs/openid-connect-core-1_0.html#ImplicitAuthRequest\">https://openid.net/specs/openid-connect-core-1_0.html#ImplicitAuthRequest</a><br>"
                                     +"<a href=\"https://openid.net/specs/openid-connect-core-1_0.html#NonceNotes\">https://openid.net/specs/openid-connect-core-1_0.html#NonceNotes</a>",
@@ -1022,7 +1075,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                         helpers.analyzeRequest(baseRequestResponse).getUrl(),
                                         new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, null, null) },
                                         "OpenID Implicit Flow Insecure Implementation Detected",
-                                        "This OpenID Implicit Flow implementation is inerently insecure, because allows the transmission of "
+                                        "This OpenID Implicit Flow implementation is inherently insecure, because allows the transmission of "
                                         +"secret tokens on the URL of HTTP GET requests (usually on URL fragment).\n<br>This behaviour is deprecated by OpenID specifications "
                                         +"because exposes the secret tokens to leakages (i.e. via cache, traffic sniffing, accesses from Javascript, etc.) and replay attacks.\n<br>"
                                         +"If the use of OpenID Implicit Flow is needed then is suggested to use the <code>request_mode</code> set to "
@@ -1036,9 +1089,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                         "Certain"
                                     )
                                 );
-                            } else {
-
-                            }
+                            } 
                         }
 
 
@@ -1105,17 +1156,17 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                         for (String fCode : foundCodes) {
                                             if (fCode.length()<6) {
                                                 // Found a weak code
-                                                List<int[]> requestHighlights = new ArrayList<>(1);
+                                                List<int[]> responseHighlights = new ArrayList<>(1);
                                                 int[] tokenOffset = new int[2];
-                                                int tokenStart = requestString.indexOf(fCode);
+                                                int tokenStart = responseString.indexOf(fCode);
                                                 tokenOffset[0] = tokenStart;
                                                 tokenOffset[1] = tokenStart+fCode.length();
-                                                requestHighlights.add(tokenOffset);
+                                                responseHighlights.add(tokenOffset);
                                                 issues.add(
                                                     new CustomScanIssue(
                                                         baseRequestResponse.getHttpService(),
                                                         helpers.analyzeRequest(baseRequestResponse).getUrl(),
-                                                        new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, requestHighlights, null) },
+                                                        new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, null, responseHighlights) },
                                                         "OpenID Weak Authorization Code Value Detected",
                                                         "The OpenID Hybrid Flow presents a security misconfiguration, the Authorization Server releases weak <code>code</code> values "
                                                         +"(insufficient entropy) during the login procedure.\n<br>"
@@ -1395,17 +1446,17 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                         for (String fCode : foundCodes) {
                                             if (fCode.length()<6) {
                                                 // Found a weak code
-                                                List<int[]> requestHighlights = new ArrayList<>(1);
+                                                List<int[]> responseHighlights = new ArrayList<>(1);
                                                 int[] tokenOffset = new int[2];
-                                                int tokenStart = requestString.indexOf(fCode);
+                                                int tokenStart = responseString.indexOf(fCode);
                                                 tokenOffset[0] = tokenStart;
                                                 tokenOffset[1] = tokenStart+fCode.length();
-                                                requestHighlights.add(tokenOffset);
+                                                responseHighlights.add(tokenOffset);
                                                 issues.add(
                                                     new CustomScanIssue(
                                                         baseRequestResponse.getHttpService(),
                                                         helpers.analyzeRequest(baseRequestResponse).getUrl(),
-                                                        new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, requestHighlights, null) },
+                                                        new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, null, responseHighlights) },
                                                         "OpenID Weak Authorization Code Value Detected",
                                                         "The OpenID Authorization Code Flow presents a security misconfiguration, the Authorization Server releases weak <code>code</code> values "
                                                         +"(insufficient entropy) during OpenID login procedure.\n<br>"
@@ -1705,7 +1756,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                 new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, null, null) },
                                 "OAUTHv2 Implicit Flow Insecure Implementation Detected",
                                 "This is a login request of OAUTHv2 Implicit Flow, the <code>response_type</code> value is <b>"+helpers.urlDecode(respType)+"</b>.<br>"
-                                +"The OAUTHv2 Implicit Flow is considered inerently insecure because allows the transmission of "
+                                +"The OAUTHv2 Implicit Flow is considered inherently insecure because allows the transmission of "
                                 +"secret tokens in the URL of HTTP GET requests (usually on URL fragment).\n<br>This behaviour is deprecated by OAUTHv2 specifications "
                                 +"since it exposes the secret tokens to leakages (i.e. via cache, traffic sniffing, accesses from Javascript, etc.) and replay attacks.\n<br>"
                                 +"It is suggested to adopt OAUTHv2 Authorization Code Flow, or "
@@ -1722,7 +1773,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
 
                         // Checking for Refresh token included in login response (Location header or body) that is discouraged for Implicit Flow
                         foundRefresh = false;
-                        if (respBody.toLowerCase().contains("refresh")) {
+                        if (!respBody.isEmpty() && respBody.toLowerCase().contains("refresh")) {
                                 foundRefresh = true;
                         } else if (getHttpHeaderValueFromList(respHeaders, "Location")!=null) {
                             if (getHttpHeaderValueFromList(respHeaders, "Location").toLowerCase().contains("refresh")) {
@@ -1825,17 +1876,17 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                         for (String fCode : foundCodes) {
                                             if (fCode.length()<6) {
                                                 // Found a weak code
-                                                List<int[]> requestHighlights = new ArrayList<>(1);
+                                                List<int[]> responseHighlights = new ArrayList<>(1);
                                                 int[] tokenOffset = new int[2];
-                                                int tokenStart = requestString.indexOf(fCode);
+                                                int tokenStart = responseString.indexOf(fCode);
                                                 tokenOffset[0] = tokenStart;
                                                 tokenOffset[1] = tokenStart+fCode.length();
-                                                requestHighlights.add(tokenOffset);
+                                                responseHighlights.add(tokenOffset);
                                                 issues.add(
                                                     new CustomScanIssue(
                                                         baseRequestResponse.getHttpService(),
                                                         helpers.analyzeRequest(baseRequestResponse).getUrl(),
-                                                        new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, requestHighlights, null) },
+                                                        new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, null, responseHighlights) },
                                                         "OAUTHv2 Weak Authorization Code Value Detected",
                                                         "The OAUTHv2 Authorization Code Flow presents a security misconfiguration, the Authorization Server releases weak <code>code</code> values "
                                                         +"(insufficient entropy) during the login procedure.\n<br>"
@@ -2022,7 +2073,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                         }
                     } 
                 
-                // Then search for OAUTHv2 Resource Owner Password Credentials or Client Credentials Flows
+                // Then search for other OAUTHv2 flows (i.e. Resource Owner Password Credentials, or Client Credentials Flows) 
                 } else if (reqParam!=null & grantParameter != null) {
                     stdout.println("[+] Passive Scan: OAUTHv2 Resource Owner Password Credentials or Client Credentials Flows detected");
                     // First retrieves the grant_type parameter from request body
@@ -2056,7 +2107,7 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                     } else if (grantType.equals("client_credentials")) {
                         // Checking if Refresh token is released in login response (Location header or body) that is discouraged for Client Credentials Flow
                         foundRefresh = false;
-                        if (respBody.toLowerCase().contains("refresh")) {
+                        if (!respBody.isEmpty() && respBody.toLowerCase().contains("refresh")) {
                                 foundRefresh = true;
                         } else if (getHttpHeaderValueFromList(respHeaders, "Location")!=null) {
                             if (getHttpHeaderValueFromList(respHeaders, "Location").toLowerCase().contains("refresh")) {
@@ -2070,12 +2121,12 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                     helpers.analyzeRequest(baseRequestResponse).getUrl(),
                                     new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, null, null) },
                                     "OAUTHv2 Client Credentials Flow Improper Release of Refresh Token",
-                                    "The Resource Server releases a refresh token after sucessful Client Credentials Flow login, "
-                                    +"this practice is discouraged by OAUTHv2 specifications.\n<br>"
+                                    "The Resource Server seems releasing a refresh token (in Location header or response body) after a successful "
+                                    +"Client Credentials Flow login, this practice is discouraged by OAUTHv2 specifications.\n<br>"
                                     +"<br>References:<br>"
                                     +"<a href=\"https://datatracker.ietf.org/doc/html/rfc6749#section-4.4.3\">https://datatracker.ietf.org/doc/html/rfc6749#section-4.4.3</a>",
                                     "Low",
-                                    "Certain"
+                                    "Tentative"
                                 )
                             );                           
                         } else {
@@ -2093,6 +2144,36 @@ public class BurpExtender implements IBurpExtender, IScannerCheck, IScannerInser
                                 )
                             );
                         }
+                    // Checking for OAUTHv2 Token Exchange Flow
+                    } else if (helpers.urlDecode(grantType).equals("urn:ietf:params:oauth:grant-type:token-exchange")) {
+                        // Found OAUTHv2 Token Exchange Flow
+                        issues.add(
+                            new CustomScanIssue(
+                                baseRequestResponse.getHttpService(),
+                                helpers.analyzeRequest(baseRequestResponse).getUrl(),
+                                new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, null, null) },
+                                "OAUTHv2 Token Exchange Flow Detected",
+                                "This is a Token Exchange Flow (RFC 8693) login request, the <code>grant_type</code> value is <b>"+helpers.urlDecode(grantType)+"</b>.\n<br>"
+                                +"Note: the Token Exchange specification does not require client authentication and even client identification at the token endpoint, "
+                                +"in that cases it should be implemented only on closed network within a service.",
+                                "Information",
+                                "Certain"
+                            )
+                        );
+                    // Checking for OAUTHv2 JWT Bearer Flow
+                    } else if (helpers.urlDecode(grantType).equals("urn:ietf:params:oauth:grant-type:jwt-bearer")) {
+                        // Found OAUTHv2 JWT Bearer Flow
+                        issues.add(
+                            new CustomScanIssue(
+                                baseRequestResponse.getHttpService(),
+                                helpers.analyzeRequest(baseRequestResponse).getUrl(),
+                                new IHttpRequestResponse[] { callbacks.applyMarkers(baseRequestResponse, null, null) },
+                                "OAUTHv2 JWT Bearer Flow Detected",
+                                "This is a JWT Bearer Flow (RFC 7523) login request, the <code>grant_type</code> value is <b>"+helpers.urlDecode(grantType)+"</b>.\n<br>",
+                                "Information",
+                                "Certain"
+                            )
+                        ); 
                     }
                 }
             }
@@ -3632,8 +3713,8 @@ class CustomScanIssue implements IScanIssue
 	{
         return "OAUTHv2 is an open standard that allows applications to get access to protected "
         +"resources and APIs on behalf of users without accessing their credentials.\n "
-        +"OAUTHv2 defines overarching schemas for granting authorization but does not describes how "
-        +"to actually perform authentication.\nOpenID instead is an OAUTHv2 extension which striclty defines some "
+        +"OAUTHv2 defines overarching schemas for granting authorization but does not describe how "
+        +"to actually perform authentication.\nOpenID instead is an OAUTHv2 extension which strictly defines some "
         +"authentication patterns to grant access to users by authenticating them through another service "
         +"or provider.\n "
         +"There are many different ways to implement OAUTHv2 and OpenID login procedures. They are widely "
@@ -3670,7 +3751,7 @@ class CustomScanIssue implements IScanIssue
         +"the scope for which the token was originally granted.</li>"
         +"<li>If using OAUTHv2 (or OpenID) Authorization Code Flow make sure to invalidate "
         +"each authorization code after its first use at the Resource-Server endpoint. In addition "
-        +"attackers that retrieve unused authorizaton codes (stealed or brute-forced) could be able "
+        +"attackers that retrieve unused authorization codes (stolen or brute-forced) could be able "
         +"to use them regardless of how long ago they were issued. To mitigate this potential issue, "
         +"unused authorization codes should expire after 10-15 minutes.</li></ul>\n<br> "
         +"For OAUTHv2/OpenID Client-Applications:\n"

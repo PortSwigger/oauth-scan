@@ -26,7 +26,7 @@ Below a non-exhaustive list of checks performed by OAUTHScan:
   * Nonce parameter misconfigurations
   * State parameter misconfiguration
   * Input Validation issues on Scope parameter
-  * Detection of inerently insecure Flows
+  * Detection of inherently insecure Flows
   * SSRF issues via Request_Uri parameter
   * Detection of Well-Known and WebFinger resources
   * And others...
