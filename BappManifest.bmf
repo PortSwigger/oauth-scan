@@ -3,7 +3,7 @@ ExtensionType: 1
 Name: OAUTH Scan
 RepoName: oauth-scan
 ScreenVersion: 1.1
-SerialVersion: 8
+SerialVersion: 9
 MinPlatformVersion: 0
 ProOnly: True
 Author: Maurizio Siddu
