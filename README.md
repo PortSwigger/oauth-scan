@@ -21,7 +21,7 @@ Below a non-exhaustive list of checks performed by OAUTHScan:
 
   * Open Redirect issues on Redirect_Uri parameter
   * Authorization Code Replay issues
-  * Leakage of secrets (i.e. Tokens, Codes)
+  * Leakage of secrets (i.e. Tokens, Codes, Client Secrets)
   * PKCE misconfigurations
   * Nonce parameter misconfigurations
   * State parameter misconfiguration
@@ -33,13 +33,39 @@ Below a non-exhaustive list of checks performed by OAUTHScan:
 
 
 # Installation
-First download (or clone) the OAUTHScan repository from this repo.
-Then build it using gradle command: `gradlew build fatJar`. 
-Finally use the Burp GUI Extender tab to import the generated 'OAUTHscan-all-X.Y.jar' file (located on "build/libs/" project folder).
+First download/clone the OAUTHScan project from this Github repository.
+Then you could build it:
+* via CLI using gradle command: `gradlew build fatJar`;
+* via GUI using the extension "Gradle for Java" for VS-Code: 
+    Open open the OAUTHScan folder with VS-Code editor. Then select 
+    the "elephant icon" of Gradle in the left vertical panel, so on 
+    the "gradle projects" section click on "OauthScan" -> "Tasks" -> 
+    "build". To build the project you have to click on the right arrow 
+    of the "build" sub-option.
+
+Finally use the Burp GUI Extender tab to import the generated 'OAUTHscan-X.Y.jar' file located on "build/libs/" project folder.
+In alternative you could add OAUTHScan plugin directly from the official Burpsuite BApp-Store (Note: it could be not up-to-date).
 
 
 # Usage
 OAUTHScan is fully integrated with the Burp Scanner, after installed on Burp you have only to launch Passive or Active scans on your targeted request.
+
+Alternatively it is also possible to run it as single-extension scan following these steps:
+ * On Burp dashboard click the "New scan" button to open the "New Scan" configuration panel
+ * Go into "Scan configuration" tab and click the button "Select from library"
+ * Then choose the option "Audit checks - extensions only" and save
+ * On Burp disable every other extension (if applicable) that performs active scan checks, so that only the OauthScan active scan runs
+ * Right-click on the HTTP request to scan and select "Scan" option to open the submenu with the previously generated single-extension scan
+
+
+# Note
+The checks on this Burp plugin have been implemented following the RFCs of OAUTHv2 and OpenID. 
+This could produce false positives when used to test applications having custom implementations of these standards.
+The plugin on the original developer's Github repository may be more up-to-date than the one in Portswigger repository.
+
+
+# Version
+OAUTHScan current version is v1.2
 
 
 # Author
